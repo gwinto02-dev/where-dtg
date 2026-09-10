@@ -1,0 +1,10 @@
+.env
+output/
+work/
+__pycache__/
+*.pyc
+*.mp4
+*.mp3
+*.jpg
+*.jpeg
+*.png

@@ -1,0 +1,43 @@
+name: Build Documentary
+
+on:
+  workflow_dispatch:
+    inputs:
+      topic:
+        description: "Episode topic"
+        required: true
+        default: "Where Does Your Old Phone Actually Go?"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+          pip install -r requirements.txt
+
+      - name: Build episode
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+        run: |
+          python -m src.pipeline --topic "${{ inputs.topic }}"
+
+      - name: Upload result
+        uses: actions/upload-artifact@v4
+        with:
+          name: documentary-video
+          path: |
+            output/episode.mp4
+            work/episode.json
+            work/media_manifest.json
+          retention-days: 3
