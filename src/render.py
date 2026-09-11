@@ -58,7 +58,7 @@ def main():
                 ss=rng.uniform(0, sdur) if sdur>0 else 0.0
                 cmd=["ffmpeg","-y","-stream_loop","-1","-ss",f"{ss:.2f}","-i",m["file"],"-t",f"{cut:.2f}"]
             cmd += ["-vf",
-                    "scale=1920:-2:force_original_aspect_ratio=decrease,"
+                    "scale=1920:1080:force_original_aspect_ratio=decrease,"
                     "pad=1920:1080:(ow-iw)/2:(oh-ih)/2,fps=25",
                     "-an","-c:v","libx264","-preset","veryfast","-pix_fmt","yuv420p",
                     "-fps_mode","cfr",str(out)]
@@ -66,7 +66,7 @@ def main():
         else:
             frames=max(1, round(cut*25))
             run(["ffmpeg","-y","-loop","1","-i",m["file"],"-t",f"{cut:.2f}","-vf",
-                 "scale=1920:-2:force_original_aspect_ratio=decrease,"
+                 "scale=1920:1080:force_original_aspect_ratio=decrease,"
                  "pad=1920:1080:(ow-iw)/2:(oh-ih)/2,"
                  f"zoompan=z='min(zoom+0.0008,1.08)':d={frames}:s=1920x1080:fps=25",
                  "-an","-c:v","libx264","-preset","veryfast","-pix_fmt","yuv420p",
