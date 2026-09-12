@@ -7,6 +7,42 @@ def duration(p):
                                "-of","default=noprint_wrappers=1:nokey=1",str(p)],text=True)
     return float(x.strip())
 
+class ClipScheduler:
+    """
+    Picks which manifest entry to use next without the old fixed
+    round-robin (manifest[i % len(manifest)]), which played the same clips
+    in the same order every lap -- with a small manifest that meant the
+    same footage reappearing every 10-15 seconds like clockwork.
+
+    Instead: shuffle the whole manifest into a "deck", hand out clips from
+    the deck one at a time, and only reshuffle a fresh deck once every clip
+    has been used once. That guarantees no clip repeats until everything
+    else has had a turn, and the order is different each lap so repeats
+    don't fall into a predictable pattern. It also avoids the same clip
+    landing back-to-back across a reshuffle boundary.
+    """
+    def __init__(self, manifest, rng):
+        self.manifest = manifest
+        self.rng = rng
+        self.deck = []
+        self.last_index = None
+
+    def _reshuffle(self):
+        self.deck = list(range(len(self.manifest)))
+        self.rng.shuffle(self.deck)
+        # Avoid the same clip playing twice in a row across the boundary
+        # between one exhausted deck and the freshly shuffled next one.
+        if self.last_index is not None and len(self.deck) > 1 and self.deck[0] == self.last_index:
+            swap_at = self.rng.randint(1, len(self.deck) - 1)
+            self.deck[0], self.deck[swap_at] = self.deck[swap_at], self.deck[0]
+
+    def next(self):
+        if not self.deck:
+            self._reshuffle()
+        idx = self.deck.pop(0)
+        self.last_index = idx
+        return self.manifest[idx]
+
 def main():
     ensure_dirs()
     settings=json.loads(Path("config/settings.json").read_text(encoding="utf-8"))
@@ -17,18 +53,20 @@ def main():
     min_cut=float(settings.get("visual_change_min_seconds",2.5))
     max_cut=float(settings.get("visual_change_max_seconds",5.0))
 
-    # V1 fix: previously each of the N scene clips was shown exactly once
-    # for a fixed 5s, capping total video length at N*5s no matter how
-    # long the narration was. With only 9 scenes that's ~45s max, so any
-    # narration over ~45s got silently truncated by -shortest in the final
-    # mux -- which is why QA kept failing on "video shorter than 6 minutes".
+    # V1 fix (kept): previously each of the N scene clips was shown exactly
+    # once for a fixed 5s, capping total video length at N*5s no matter how
+    # long the narration was. Now we cycle back through the downloaded
+    # visuals, cutting each use to a randomized length within
+    # [min_cut, max_cut], until the visual runway covers the full narration
+    # length. Reused clips get a randomized start offset instead of always
+    # replaying from frame 0.
     #
-    # Now we cycle back through the downloaded visuals, cutting each use to
-    # a randomized length within [min_cut, max_cut] (per settings.json),
-    # until the visual runway covers the full narration length. Reused
-    # clips get a randomized start offset (instead of always replaying
-    # from frame 0) so repeats look less identical.
+    # V2 fix: "cycle back through" used to mean manifest[i % len(manifest)],
+    # a fixed repeating order -- see ClipScheduler above for why that made
+    # repeats predictable and closely spaced, and how the shuffled-deck
+    # approach fixes it.
     rng=random.Random(42)
+    scheduler=ClipScheduler(manifest, rng)
     src_durations={}
 
     def src_duration(path):
@@ -40,7 +78,7 @@ def main():
     total=0.0
     i=0
     while total < narration_dur + max_cut:
-        m=manifest[i % len(manifest)]
+        m=scheduler.next()
         cut=rng.uniform(min_cut, max_cut)
         out=WORK/f"clip_{i:03d}.mp4"
 

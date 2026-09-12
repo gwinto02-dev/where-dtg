@@ -4,7 +4,7 @@ A GitHub Actions-friendly pipeline for producing 6–12 minute faceless document
 
 ## Pipeline
 
-Topic → Research/Script → Scene Plan → Pexels video/photo search → TTS → FFmpeg edit → QA → MP4
+Topic → Research/Script → Scene Plan → Pexels + Pixabay video/photo search (Gemini-judged relevance) → TTS → FFmpeg edit (shuffled, no-repeat-until-exhausted clip scheduling) → QA → MP4
 
 The default workflow does **not** publish publicly. YouTube upload is intentionally left as an optional private/scheduled stage.
 
@@ -22,8 +22,9 @@ The default workflow does **not** publish publicly. YouTube upload is intentiona
 
 ## Required secrets
 
-- `GEMINI_API_KEY` — script/research generation
+- `GEMINI_API_KEY` — script/research generation, and vision-based relevance judging for every candidate clip
 - `PEXELS_API_KEY` — stock video/photo search
+- `PIXABAY_API_KEY` — second free stock video/photo source (recommended, not strictly required — the pipeline runs on Pexels alone if this is unset, but a second source means fewer irrelevant-clip fallbacks and fewer repeated clips)
 
 Optional:
 - `YOUTUBE_CLIENT_ID`
