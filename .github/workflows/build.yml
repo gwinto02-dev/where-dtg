@@ -42,3 +42,28 @@ jobs:
             work/episode.json
             work/media_manifest.json
           retention-days: 3
+
+      - name: Upload video for email link
+        id: upload_video
+        run: |
+          URL=$(curl -sf -F "file=@output/episode.mp4" https://0x0.st)
+          echo "Video URL: $URL"
+          echo "video_url=$URL" >> "$GITHUB_OUTPUT"
+
+      - name: Email the video link
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: ${{ secrets.EMAIL_SERVER || 'smtp.gmail.com' }}
+          server_port: ${{ secrets.EMAIL_PORT || 465 }}
+          username: ${{ secrets.EMAIL_USERNAME }}
+          password: ${{ secrets.EMAIL_PASSWORD }}
+          subject: "${{ inputs.topic }}"
+          to: ${{ secrets.EMAIL_TO }}
+          from: Where Does It Go
+          body: |
+            Your documentary "${{ inputs.topic }}" is ready.
+
+            Download it here (link, not an attachment, since the video is too large to email directly):
+            ${{ steps.upload_video.outputs.video_url }}
+
+            Note: this link is hosted on a public file-sharing service (0x0.st) and is not private/password-protected. Anyone with the link can download the file, and it will eventually expire (retention scales with file size, typically 30+ days).
