@@ -33,12 +33,23 @@ jobs:
         run: |
           python -m src.pipeline --topic "${{ inputs.topic }}"
 
+      - name: Name video by topic
+        id: name_video
+        run: |
+          SLUG=$(echo "${{ inputs.topic }}" | tr '[:upper:]' '[:lower:]' \
+            | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//' | cut -c1-80)
+          if [ -z "$SLUG" ]; then SLUG="episode"; fi
+          FILENAME="${SLUG}.mp4"
+          mv "output/episode.mp4" "output/${FILENAME}"
+          echo "Renamed to output/${FILENAME}"
+          echo "filename=${FILENAME}" >> "$GITHUB_OUTPUT"
+
       - name: Upload result
         uses: actions/upload-artifact@v4
         with:
           name: documentary-video
           path: |
-            output/episode.mp4
+            output/${{ steps.name_video.outputs.filename }}
             work/episode.json
             work/media_manifest.json
           retention-days: 3
@@ -48,12 +59,13 @@ jobs:
         run: |
           set -e
           UA="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
+          FILE="output/${{ steps.name_video.outputs.filename }}"
 
-          URL=$(curl -sS -A "$UA" -F "file=@output/episode.mp4" https://0x0.st || true)
+          URL=$(curl -sS -A "$UA" -F "file=@${FILE}" https://0x0.st || true)
 
           if [[ "$URL" != http* ]]; then
             echo "0x0.st upload failed (response: $URL), trying catbox.moe..."
-            URL=$(curl -sS -A "$UA" -F "reqtype=fileupload" -F "fileToUpload=@output/episode.mp4" https://catbox.moe/user/api.php || true)
+            URL=$(curl -sS -A "$UA" -F "reqtype=fileupload" -F "fileToUpload=@${FILE}" https://catbox.moe/user/api.php || true)
           fi
 
           if [[ "$URL" != http* ]]; then
@@ -76,6 +88,8 @@ jobs:
           from: Where Does It Go
           body: |
             Your documentary "${{ inputs.topic }}" is ready.
+
+            File: ${{ steps.name_video.outputs.filename }}
 
             Download it here (link, not an attachment, since the video is too large to email directly):
             ${{ steps.upload_video.outputs.video_url }}
