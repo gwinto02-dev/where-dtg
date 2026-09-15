@@ -12,6 +12,8 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -54,27 +56,16 @@ jobs:
             work/media_manifest.json
           retention-days: 3
 
-      - name: Upload video for email link
-        id: upload_video
-        run: |
-          set -e
-          UA="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
-          FILE="output/${{ steps.name_video.outputs.filename }}"
-
-          URL=$(curl -sS -A "$UA" -F "file=@${FILE}" https://0x0.st || true)
-
-          if [[ "$URL" != http* ]]; then
-            echo "0x0.st upload failed (response: $URL), trying catbox.moe..."
-            URL=$(curl -sS -A "$UA" -F "reqtype=fileupload" -F "fileToUpload=@${FILE}" https://catbox.moe/user/api.php || true)
-          fi
-
-          if [[ "$URL" != http* ]]; then
-            echo "Both uploads failed. Last response: $URL"
-            exit 1
-          fi
-
-          echo "Video URL: $URL"
-          echo "video_url=$URL" >> "$GITHUB_OUTPUT"
+      - name: Upload video to a GitHub Release
+        id: release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: video-${{ github.run_id }}
+          name: "${{ inputs.topic }}"
+          body: "Auto-generated documentary: ${{ inputs.topic }}"
+          files: output/${{ steps.name_video.outputs.filename }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Email the video link
         uses: dawidd6/action-send-mail@v3
@@ -91,7 +82,7 @@ jobs:
 
             File: ${{ steps.name_video.outputs.filename }}
 
-            Download it here (link, not an attachment, since the video is too large to email directly):
-            ${{ steps.upload_video.outputs.video_url }}
+            Download it from this GitHub Release page (click the .mp4 file under Assets):
+            ${{ steps.release.outputs.url }}
 
-            Note: this link is hosted on a public file-sharing service (0x0.st) and is not private/password-protected. Anyone with the link can download the file, and it will eventually expire (retention scales with file size, typically 30+ days).
+            Note: if this repo is private, you'll need to be logged into GitHub to download it. If it's public, the link works for anyone.
