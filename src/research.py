@@ -21,6 +21,21 @@ Topic: {topic}
 
 Create a factual, engaging 6–12 minute documentary plan.
 
+HOOK STYLE — COLD OPEN (applies to "hook" and scene 1's narration):
+- Open inside a single, concrete, real moment tied directly to {topic} —
+  a specific person, place, or action, happening right now. No framing,
+  no throat-clearing, no "Somewhere in..." or "Imagine..." lead-ins.
+  Just the scene, stated plainly, as if it's already in progress.
+- Do NOT open with a question, a statistic, or a general statement about
+  the topic. Save the big-picture framing for after the scene has landed.
+- Delay the pivot to the viewer ("you", "your [object]") for 2–3
+  sentences after the opening scene — let the scene breathe first, then
+  connect it back to something the viewer personally owns or does.
+- The scene must be something visual_queries can actually depict with
+  real stock footage — avoid abstract or unfilmable moments.
+- End the hook on a concrete promise of what the episode will follow,
+  not a vague tease.
+
 IMPORTANT:
 - Do not invent statistics, companies, locations, quotes, or claims.
 - Clearly flag claims that require external verification.
