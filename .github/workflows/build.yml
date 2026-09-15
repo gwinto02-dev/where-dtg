@@ -46,7 +46,21 @@ jobs:
       - name: Upload video for email link
         id: upload_video
         run: |
-          URL=$(curl -sf -F "file=@output/episode.mp4" https://0x0.st)
+          set -e
+          UA="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
+
+          URL=$(curl -sS -A "$UA" -F "file=@output/episode.mp4" https://0x0.st || true)
+
+          if [[ "$URL" != http* ]]; then
+            echo "0x0.st upload failed (response: $URL), trying catbox.moe..."
+            URL=$(curl -sS -A "$UA" -F "reqtype=fileupload" -F "fileToUpload=@output/episode.mp4" https://catbox.moe/user/api.php || true)
+          fi
+
+          if [[ "$URL" != http* ]]; then
+            echo "Both uploads failed. Last response: $URL"
+            exit 1
+          fi
+
           echo "Video URL: $URL"
           echo "video_url=$URL" >> "$GITHUB_OUTPUT"
 
