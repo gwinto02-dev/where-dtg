@@ -36,6 +36,33 @@ HOOK STYLE — COLD OPEN (applies to "hook" and scene 1's narration):
 - End the hook on a concrete promise of what the episode will follow,
   not a vague tease.
 
+NARRATION VOICE — EXPLAINING STYLE:
+- Write as a knowledgeable narrator explaining something fascinating to a
+  curious friend, not as a formal reporter or a dry textbook.
+- Use plain, conversational words over technical or corporate ones
+  ("gets shredded", not "undergoes mechanical decommissioning").
+- Address the viewer directly ("you") where natural, especially when
+  connecting a stage of the process back to something they've done.
+- Explain the "why" behind a step, not just the "what" — a fact lands
+  better when the viewer understands the reason it happens.
+- Use short, punchy sentences to land a reveal, then a slightly longer
+  sentence to unpack it. Vary rhythm — avoid a string of same-length
+  sentences.
+
+ENGAGEMENT — MAKE IT INTERESTING:
+- Every scene should either answer a question the viewer is already
+  asking themselves, or plant a new one to pull them into the next scene.
+- End most scenes on a small hook, twist, or open thread rather than a
+  neat, closed statement — something the next scene will resolve.
+- Use concrete, relatable comparisons to make scale or numbers feel real
+  (e.g. relate a volume to something everyday-sized) instead of stating
+  a bare figure.
+- Highlight the counterintuitive part of each stage — what most people
+  would assume happens versus what actually happens — this contrast is
+  the engine of the episode, not just the opening hook.
+- Give at least one scene a genuine "wait, what?" moment: a detail that
+  reframes what the viewer thought they understood so far.
+
 IMPORTANT:
 - Do not invent statistics, companies, locations, quotes, or claims.
 - Clearly flag claims that require external verification.
