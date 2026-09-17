@@ -9,23 +9,27 @@ def duration(p):
 
 class ClipScheduler:
     """
-    Picks which manifest entry to use next without the old fixed
-    round-robin (manifest[i % len(manifest)]), which played the same clips
-    in the same order every lap -- with a small manifest that meant the
-    same footage reappearing every 10-15 seconds like clockwork.
+    Uses every downloaded clip AT MOST ONCE per episode. It shuffles the
+    manifest into a "deck" and hands out clips from it one at a time,
+    stretching each clip's on-screen duration (see stretch_min/stretch_max
+    in main()) so the available unique footage is made to cover the whole
+    narration length without needing to repeat anything.
 
-    Instead: shuffle the whole manifest into a "deck", hand out clips from
-    the deck one at a time, and only reshuffle a fresh deck once every clip
-    has been used once. That guarantees no clip repeats until everything
-    else has had a turn, and the order is different each lap so repeats
-    don't fall into a predictable pattern. It also avoids the same clip
-    landing back-to-back across a reshuffle boundary.
+    Repeating a clip only happens if the deck runs out AND stretching
+    still isn't enough to cover the narration -- i.e. there truly isn't
+    enough unique footage for the episode length. That case reshuffles and
+    starts reusing clips, but prints a clear warning so it's obvious in
+    the logs (fix by raising CLIPS_PER_SCENE / CANDIDATE_POOL in
+    visuals.py, or adding PIXABAY_API_KEY, rather than silently repeating).
     """
     def __init__(self, manifest, rng):
         self.manifest = manifest
         self.rng = rng
         self.deck = []
         self.last_index = None
+        self.exhausted_once = False
+        self.repeat_warned = False
+        self._reshuffle()
 
     def _reshuffle(self):
         self.deck = list(range(len(self.manifest)))
@@ -38,10 +42,25 @@ class ClipScheduler:
 
     def next(self):
         if not self.deck:
+            # Every unique clip has now been used once. Only reshuffle
+            # (i.e. start repeating) if we still need more footage -- the
+            # caller stops calling next() once the narration is covered,
+            # so reaching this point means stretching wasn't enough either.
+            if not self.repeat_warned:
+                print("WARNING: ran out of unique clips even after stretching "
+                      "clip durations -- reusing footage for the remainder of "
+                      "the episode. Raise CLIPS_PER_SCENE / CANDIDATE_POOL in "
+                      "visuals.py, or set PIXABAY_API_KEY, to avoid this.")
+                self.repeat_warned = True
+            self.exhausted_once = True
             self._reshuffle()
         idx = self.deck.pop(0)
         self.last_index = idx
         return self.manifest[idx]
+
+    def unique_remaining(self):
+        """How many not-yet-repeated clips are left in the current deck."""
+        return 0 if self.exhausted_once else len(self.deck)
 
 def main():
     ensure_dirs()
@@ -55,17 +74,36 @@ def main():
 
     # V1 fix (kept): previously each of the N scene clips was shown exactly
     # once for a fixed 5s, capping total video length at N*5s no matter how
-    # long the narration was. Now we cycle back through the downloaded
-    # visuals, cutting each use to a randomized length within
-    # [min_cut, max_cut], until the visual runway covers the full narration
-    # length. Reused clips get a randomized start offset instead of always
-    # replaying from frame 0.
+    # long the narration was.
     #
-    # V2 fix: "cycle back through" used to mean manifest[i % len(manifest)],
-    # a fixed repeating order -- see ClipScheduler above for why that made
-    # repeats predictable and closely spaced, and how the shuffled-deck
-    # approach fixes it.
+    # V3 fix: each downloaded clip is now used AT MOST ONCE per episode.
+    # Instead of cycling back through the manifest, we stretch every
+    # clip's on-screen duration (below) so the unique footage we actually
+    # downloaded covers the full narration length. Repeats only happen as
+    # a last resort if there truly isn't enough unique footage even after
+    # stretching -- see ClipScheduler.
     rng=random.Random(42)
+
+    # Stretch per-clip duration so the unique clips we actually downloaded
+    # can cover the full narration length without repeating any of them.
+    # Only fall back to the configured min/max (and eventually to reusing
+    # clips, inside ClipScheduler) if there genuinely isn't enough unique
+    # footage even at the stretch ceiling below.
+    STRETCH_CEILING = 12.0
+    unique_total = len(manifest)
+    if unique_total == 0:
+        raise RuntimeError("media_manifest.json is empty -- nothing to render.")
+
+    target_total = narration_dur + max_cut
+    avg_needed = target_total / unique_total
+    if avg_needed > max_cut:
+        stretched_max = min(STRETCH_CEILING, avg_needed * 1.15)
+        stretched_min = min(stretched_max, max(min_cut, avg_needed * 0.85))
+        print(f"{unique_total} unique clips for a {narration_dur:.0f}s narration -- "
+              f"stretching per-clip duration to {stretched_min:.1f}-{stretched_max:.1f}s "
+              f"so no clip has to repeat.")
+        min_cut, max_cut = stretched_min, stretched_max
+
     scheduler=ClipScheduler(manifest, rng)
     src_durations={}
 

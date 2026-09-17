@@ -11,9 +11,9 @@ PEXELS_BASE = "https://api.pexels.com/v1"
 PIXABAY_BASE = "https://pixabay.com/api/"
 MODEL = "gemini-3.6-flash"
 
-CLIPS_PER_SCENE = 3       # how many clips to actually download per scene
-CANDIDATE_POOL = 16       # keyword-matched candidates to show Gemini for relevance judging
-PHOTO_FALLBACK_POOL = 10  # smaller pool used only if zero videos clear the bar
+CLIPS_PER_SCENE = 6       # how many clips to actually download per scene
+CANDIDATE_POOL = 30       # keyword-matched candidates to show Gemini for relevance judging
+PHOTO_FALLBACK_POOL = 16  # smaller pool used only if zero videos clear the bar
 
 
 # ---------------------------------------------------------------------------
@@ -23,7 +23,7 @@ PHOTO_FALLBACK_POOL = 10  # smaller pool used only if zero videos clear the bar
 def search_pexels_videos(q, key):
     h = {"Authorization": key}
     r = requests.get(f"{PEXELS_BASE}/videos/search", headers=h, params={
-        "query": q, "per_page": 8, "orientation": "landscape", "size": "medium"
+        "query": q, "per_page": 40, "orientation": "landscape", "size": "medium"
     }, timeout=30)
     r.raise_for_status()
     return r.json().get("videos", [])
@@ -32,7 +32,7 @@ def search_pexels_videos(q, key):
 def search_pexels_photos(q, key):
     h = {"Authorization": key}
     r = requests.get(f"{PEXELS_BASE}/search", headers=h, params={
-        "query": q, "per_page": 8, "orientation": "landscape"
+        "query": q, "per_page": 40, "orientation": "landscape"
     }, timeout=30)
     r.raise_for_status()
     return r.json().get("photos", [])
@@ -54,7 +54,7 @@ def pexels_best_video_file(v):
 
 def search_pixabay_videos(q, key):
     r = requests.get(f"{PIXABAY_BASE}videos/", params={
-        "key": key, "q": q, "per_page": 8, "safesearch": "true"
+        "key": key, "q": q, "per_page": 50, "safesearch": "true"
     }, timeout=30)
     r.raise_for_status()
     return r.json().get("hits", [])
@@ -62,7 +62,7 @@ def search_pixabay_videos(q, key):
 
 def search_pixabay_photos(q, key):
     r = requests.get(PIXABAY_BASE, params={
-        "key": key, "q": q, "image_type": "photo", "per_page": 8, "safesearch": "true"
+        "key": key, "q": q, "image_type": "photo", "per_page": 50, "safesearch": "true"
     }, timeout=30)
     r.raise_for_status()
     return r.json().get("hits", [])
