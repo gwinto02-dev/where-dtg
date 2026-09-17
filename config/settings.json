@@ -6,8 +6,8 @@
   "visual_change_max_seconds": 5.0,
   "video_priority": true,
   "photos_as_fallback": true,
-  "tts_voice": "en-US-AriaNeural",
-  "tts_rate": "+0%",
+  "tts_voice": "en-GB-RyanNeural",
+  "tts_rate": "-8%",
   "music_enabled": false,
   "youtube_privacy": "private"
 }
