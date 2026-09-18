@@ -10,7 +10,11 @@ from google.genai import types
 from .utils import WORK, save_json, ensure_dirs
 
 
-MODEL = "gemini-3.6-flash"
+MODEL_FALLBACKS = [
+    "gemini-3.5-flash-lite",
+    "gemini-3.1-flash-lite",
+    "gemini-3.6-flash",
+]
 
 PROMPT = """You are the research and documentary producer for a YouTube channel called
 "Where Does It Go?".
@@ -35,33 +39,6 @@ HOOK STYLE — COLD OPEN (applies to "hook" and scene 1's narration):
   real stock footage — avoid abstract or unfilmable moments.
 - End the hook on a concrete promise of what the episode will follow,
   not a vague tease.
-
-NARRATION VOICE — EXPLAINING STYLE:
-- Write as a knowledgeable narrator explaining something fascinating to a
-  curious friend, not as a formal reporter or a dry textbook.
-- Use plain, conversational words over technical or corporate ones
-  ("gets shredded", not "undergoes mechanical decommissioning").
-- Address the viewer directly ("you") where natural, especially when
-  connecting a stage of the process back to something they've done.
-- Explain the "why" behind a step, not just the "what" — a fact lands
-  better when the viewer understands the reason it happens.
-- Use short, punchy sentences to land a reveal, then a slightly longer
-  sentence to unpack it. Vary rhythm — avoid a string of same-length
-  sentences.
-
-ENGAGEMENT — MAKE IT INTERESTING:
-- Every scene should either answer a question the viewer is already
-  asking themselves, or plant a new one to pull them into the next scene.
-- End most scenes on a small hook, twist, or open thread rather than a
-  neat, closed statement — something the next scene will resolve.
-- Use concrete, relatable comparisons to make scale or numbers feel real
-  (e.g. relate a volume to something everyday-sized) instead of stating
-  a bare figure.
-- Highlight the counterintuitive part of each stage — what most people
-  would assume happens versus what actually happens — this contrast is
-  the engine of the episode, not just the opening hook.
-- Give at least one scene a genuine "wait, what?" moment: a detail that
-  reframes what the viewer thought they understood so far.
 
 IMPORTANT:
 - Do not invent statistics, companies, locations, quotes, or claims.
@@ -122,71 +99,96 @@ def clean_json(text):
     return text
 
 
-def generate_with_retry(client, prompt, attempts=6):
+def generate_with_retry(client, prompt, models=None, attempts_per_model=3):
 
-    for attempt in range(1, attempts + 1):
+    models = models or MODEL_FALLBACKS
+    last_error = None
 
-        try:
+    for model_index, model in enumerate(models):
 
-            print(
-                f"Gemini request attempt "
-                f"{attempt}/{attempts} using {MODEL}"
-            )
+        for attempt in range(1, attempts_per_model + 1):
 
-            response = client.models.generate_content(
-                model=MODEL,
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    temperature=1.0
-                )
-            )
+            try:
 
-            if not response.text:
-                raise RuntimeError(
-                    "Gemini returned an empty response."
+                print(
+                    f"Gemini request attempt "
+                    f"{attempt}/{attempts_per_model} using {model}"
                 )
 
-            return response.text
+                response = client.models.generate_content(
+                    model=model,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        temperature=1.0
+                    )
+                )
 
-        except Exception as e:
+                if not response.text:
+                    raise RuntimeError(
+                        "Gemini returned an empty response."
+                    )
 
-            error_text = str(e)
+                return response.text
 
-            print(
-                f"Gemini request failed on attempt "
-                f"{attempt}: {error_text}"
-            )
+            except Exception as e:
 
-            # Retry transient server/capacity errors.
-            if (
-                "503" not in error_text
-                and "UNAVAILABLE" not in error_text
-                and "429" not in error_text
-                and "RESOURCE_EXHAUSTED" not in error_text
-                and "500" not in error_text
-                and "INTERNAL" not in error_text
-            ):
-                raise
+                error_text = str(e)
+                last_error = e
 
-            if attempt == attempts:
-                raise
+                print(
+                    f"Gemini request failed on attempt "
+                    f"{attempt} ({model}): {error_text}"
+                )
 
-            # Exponential backoff + jitter.
-            delay = min(
-                60,
-                (2 ** (attempt - 1)) * 5
-            )
+                is_daily_quota = (
+                    "RESOURCE_EXHAUSTED" in error_text
+                    and "PerDay" in error_text
+                )
 
-            jitter = random.uniform(0, 3)
+                is_transient = (
+                    "503" in error_text
+                    or "UNAVAILABLE" in error_text
+                    or "429" in error_text
+                    or "RESOURCE_EXHAUSTED" in error_text
+                    or "500" in error_text
+                    or "INTERNAL" in error_text
+                )
 
-            wait_time = delay + jitter
+                if not is_transient:
+                    raise
 
-            print(
-                f"Transient Gemini error. "
-                f"Waiting {wait_time:.1f} seconds before retry..."
-            )
+                # Daily quota exhausted for this model — no point retrying
+                # it, move straight to the next model in the fallback list.
+                if is_daily_quota:
+                    print(
+                        f"Daily quota exhausted for {model}. "
+                        f"Falling back to next model..."
+                    )
+                    break
 
-            time.sleep(wait_time)
+                if attempt == attempts_per_model:
+                    # Out of retries for this model — try the next one.
+                    break
+
+                # Exponential backoff + jitter for transient errors.
+                delay = min(
+                    60,
+                    (2 ** (attempt - 1)) * 5
+                )
+
+                jitter = random.uniform(0, 3)
+
+                wait_time = delay + jitter
+
+                print(
+                    f"Transient Gemini error. "
+                    f"Waiting {wait_time:.1f} seconds before retry..."
+                )
+
+                time.sleep(wait_time)
+
+    # All models exhausted.
+    raise last_error
 
 
 def main(topic):
