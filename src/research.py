@@ -10,10 +10,25 @@ from google.genai import types
 from .utils import WORK, save_json, ensure_dirs
 
 
+# All models currently on Gemini's free tier (Pro models are paid-only as of
+# 2026), ordered from highest known daily quota to lowest so the script
+# always tries the roomiest bucket first.
 MODEL_FALLBACKS = [
+    # Flash-Lite family — ~500 free requests/day
     "gemini-3.5-flash-lite",
     "gemini-3.1-flash-lite",
+    "gemini-3.1-flash-lite-preview",
+    "gemini-2.5-flash-lite",
+    "gemini-2.5-flash-lite-preview",
+    "gemini-2.0-flash-lite",
+    # Standard Flash family — ~20 free requests/day, tried last
+    "gemini-3.8-flash",
+    "gemini-3.7-flash",
     "gemini-3.6-flash",
+    "gemini-3.5-flash",
+    "gemini-2.5-flash",
+    "gemini-2.5-flash-preview",
+    "gemini-2.0-flash",
 ]
 
 PROMPT = """You are the research and documentary producer for a YouTube channel called
