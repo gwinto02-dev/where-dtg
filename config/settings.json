@@ -9,5 +9,10 @@
   "tts_voice": "en-GB-RyanNeural",
   "tts_rate": "-8%",
   "music_enabled": false,
-  "youtube_privacy": "private"
+  "youtube_privacy": "private",
+  "shorts_enabled": true,
+  "short_tts_rate": "+0%",
+  "short_cut_min_seconds": 0.8,
+  "short_cut_max_seconds": 1.8,
+  "short_cta_text": "Full story linked below"
 }

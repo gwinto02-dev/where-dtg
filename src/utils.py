@@ -1,5 +1,5 @@
 from pathlib import Path
-import json, subprocess, re
+import json, subprocess, re, asyncio
 
 ROOT = Path(__file__).resolve().parents[1]
 WORK = ROOT / "work"
@@ -22,3 +22,13 @@ def run(cmd):
 
 def clean_filename(s):
     return re.sub(r"[^A-Za-z0-9._-]+", "_", s)[:100]
+
+async def _synth(text, out, voice, rate):
+    import edge_tts
+    communicate = edge_tts.Communicate(text, voice=voice, rate=rate)
+    await communicate.save(str(out))
+
+def synth_speech(text, out, voice, rate):
+    """Shared narration TTS helper used by both the long-form and short-form
+    pipelines, so both narrate in the same voice via edge-tts."""
+    asyncio.run(_synth(text, out, voice, rate))

@@ -14,8 +14,9 @@ def main():
     step("src.visuals",[])
     step("src.voice",[])
     step("src.render",[])
+    step("src.short",[])
     step("src.qa",[])
-    print("\nDONE. Check output/episode.mp4")
+    print("\nDONE. Check output/episode.mp4 and output/short.mp4")
 
 if __name__=="__main__":
     main()

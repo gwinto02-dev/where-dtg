@@ -32,6 +32,21 @@ def check_hook_style():
                       f"instead of a cold open. Consider regenerating.")
                 break
 
+def check_short():
+    p = OUTPUT / "short.mp4"
+    if not p.exists():
+        print("QA short check: output/short.mp4 not found (shorts_enabled may be false), skipping")
+        return
+    data = json.loads(probe(p))
+    d = float(data["format"]["duration"])
+    streams = [x["codec_type"] for x in data["streams"]]
+    print(f"QA short duration={d:.1f}s streams={streams}")
+    if d < 8 or d > 90:
+        print(f"QA WARNING: short.mp4 duration ({d:.1f}s) is outside the typical "
+              f"8-90s Shorts/Reels range -- check short_script length and cut settings.")
+    if "video" not in streams or "audio" not in streams:
+        print("QA WARNING: short.mp4 is missing a video or audio stream.")
+
 def main():
     p=OUTPUT/"episode.mp4"
     if not p.exists(): raise SystemExit("No output video")
@@ -42,6 +57,7 @@ def main():
     if d < 360: raise SystemExit("FAIL: video shorter than 6 minutes")
     if "video" not in streams or "audio" not in streams: raise SystemExit("FAIL: missing A/V stream")
     check_hook_style()
+    check_short()
     print("QA PASS")
 
 if __name__=="__main__":

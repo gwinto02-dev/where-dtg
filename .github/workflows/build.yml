@@ -24,7 +24,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg
+          sudo apt-get install -y ffmpeg fonts-dejavu-core
           pip install -r requirements.txt
 
       - name: Build episode
@@ -35,16 +35,25 @@ jobs:
         run: |
           python -m src.pipeline --topic "${{ inputs.topic }}"
 
-      - name: Name video by topic
+      - name: Name videos by topic
         id: name_video
         run: |
           SLUG=$(echo "${{ inputs.topic }}" | tr '[:upper:]' '[:lower:]' \
             | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//' | cut -c1-80)
           if [ -z "$SLUG" ]; then SLUG="episode"; fi
-          FILENAME="${SLUG}.mp4"
-          mv "output/episode.mp4" "output/${FILENAME}"
-          echo "Renamed to output/${FILENAME}"
-          echo "filename=${FILENAME}" >> "$GITHUB_OUTPUT"
+          LONG_FILENAME="${SLUG}.mp4"
+          SHORT_FILENAME="${SLUG}-short.mp4"
+          mv "output/episode.mp4" "output/${LONG_FILENAME}"
+          echo "Renamed to output/${LONG_FILENAME}"
+          echo "filename=${LONG_FILENAME}" >> "$GITHUB_OUTPUT"
+          if [ -f "output/short.mp4" ]; then
+            mv "output/short.mp4" "output/${SHORT_FILENAME}"
+            echo "Renamed to output/${SHORT_FILENAME}"
+            echo "short_filename=${SHORT_FILENAME}" >> "$GITHUB_OUTPUT"
+          else
+            echo "No output/short.mp4 found (shorts_enabled may be false in config/settings.json)"
+            echo "short_filename=" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Upload result
         uses: actions/upload-artifact@v4
@@ -52,22 +61,25 @@ jobs:
           name: documentary-video
           path: |
             output/${{ steps.name_video.outputs.filename }}
+            output/${{ steps.name_video.outputs.short_filename }}
             work/episode.json
             work/media_manifest.json
           retention-days: 3
+          if-no-files-found: warn
 
-      - name: Upload video to a GitHub Release
+      - name: Upload videos to a GitHub Release
         id: release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: video-${{ github.run_id }}
           name: "${{ inputs.topic }}"
-          body: "Auto-generated documentary: ${{ inputs.topic }}"
-          files: output/${{ steps.name_video.outputs.filename }}
+          body: "Auto-generated documentary + short: ${{ inputs.topic }}"
+          files: output/*.mp4
+          fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Email the video link
+      - name: Email the video links
         uses: dawidd6/action-send-mail@v3
         with:
           server_address: ${{ secrets.EMAIL_SERVER || 'smtp.gmail.com' }}
@@ -80,9 +92,16 @@ jobs:
           body: |
             Your documentary "${{ inputs.topic }}" is ready.
 
-            File: ${{ steps.name_video.outputs.filename }}
+            Full-length video: ${{ steps.name_video.outputs.filename }}
+            Short teaser: ${{ steps.name_video.outputs.short_filename || '(shorts_enabled is false -- none generated)' }}
 
-            Download it from this GitHub Release page (click the .mp4 file under Assets):
+            Download both from this GitHub Release page (click each .mp4 file under Assets):
             ${{ steps.release.outputs.url }}
+
+            Suggested posting order: upload the short first as a Short/Reel with
+            the full video linked in the description or pinned comment once it's
+            live, then publish the full-length video. The short's script builds
+            toward a cliffhanger question so it should drive curious viewers to
+            the long-form video for the answer.
 
             Note: if this repo is private, you'll need to be logged into GitHub to download it. If it's public, the link works for anyone.

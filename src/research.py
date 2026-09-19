@@ -55,6 +55,22 @@ HOOK STYLE — COLD OPEN (applies to "hook" and scene 1's narration):
 - End the hook on a concrete promise of what the episode will follow,
   not a vague tease.
 
+SHORT-FORM HOOK (applies to "short_script" only):
+- Write a separate, self-contained 20–40 word script for a 15–25 second
+  YouTube Shorts / vertical teaser about the SAME topic.
+- It must work as a stand-alone curiosity hook: open on the same kind of
+  concrete, real moment as the main hook, but punchier and faster —
+  no setup, no context, straight into the scene.
+- Build to a specific, concrete question or reveal-in-progress about
+  {topic} — then STOP just before the answer. The viewer must feel like
+  they're missing the actual explanation.
+- End with a short, natural line that points at the full video without
+  sounding like an ad — e.g. referencing "the full story", "how it
+  actually happens", or similar. Do not say "link in bio" or "swipe up"
+  or any platform-specific mechanic — keep it timeless.
+- Do NOT reuse the main hook's exact wording. It should feel like its own
+  tight, vertical-video moment, not a trimmed copy of the long hook.
+
 IMPORTANT:
 - Do not invent statistics, companies, locations, quotes, or claims.
 - Clearly flag claims that require external verification.
@@ -77,6 +93,7 @@ Return ONLY valid JSON:
 {{
   "working_title": "...",
   "hook": "...",
+  "short_script": "20-40 word standalone vertical-video hook, ending on a cliffhanger that points to the full video",
   "summary": "...",
   "scenes": [
     {{
@@ -255,6 +272,10 @@ def main(topic):
         raise RuntimeError(
             "Gemini returned zero scenes."
         )
+
+    if not (data.get("short_script") or "").strip():
+        print("Gemini did not return a short_script -- falling back to the main hook for the short video.")
+        data["short_script"] = data.get("hook", "")
 
     save_json(
         WORK / "episode.json",
