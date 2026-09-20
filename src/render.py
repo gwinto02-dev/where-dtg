@@ -9,27 +9,23 @@ def duration(p):
 
 class ClipScheduler:
     """
-    Uses every downloaded clip AT MOST ONCE per episode. It shuffles the
-    manifest into a "deck" and hands out clips from it one at a time,
-    stretching each clip's on-screen duration (see stretch_min/stretch_max
-    in main()) so the available unique footage is made to cover the whole
-    narration length without needing to repeat anything.
+    Picks which manifest entry to use next without the old fixed
+    round-robin (manifest[i % len(manifest)]), which played the same clips
+    in the same order every lap -- with a small manifest that meant the
+    same footage reappearing every 10-15 seconds like clockwork.
 
-    Repeating a clip only happens if the deck runs out AND stretching
-    still isn't enough to cover the narration -- i.e. there truly isn't
-    enough unique footage for the episode length. That case reshuffles and
-    starts reusing clips, but prints a clear warning so it's obvious in
-    the logs (fix by raising CLIPS_PER_SCENE / CANDIDATE_POOL in
-    visuals.py, or adding PIXABAY_API_KEY, rather than silently repeating).
+    Instead: shuffle the whole manifest into a "deck", hand out clips from
+    the deck one at a time, and only reshuffle a fresh deck once every clip
+    has been used once. That guarantees no clip repeats until everything
+    else has had a turn, and the order is different each lap so repeats
+    don't fall into a predictable pattern. It also avoids the same clip
+    landing back-to-back across a reshuffle boundary.
     """
     def __init__(self, manifest, rng):
         self.manifest = manifest
         self.rng = rng
         self.deck = []
         self.last_index = None
-        self.exhausted_once = False
-        self.repeat_warned = False
-        self._reshuffle()
 
     def _reshuffle(self):
         self.deck = list(range(len(self.manifest)))
@@ -42,69 +38,40 @@ class ClipScheduler:
 
     def next(self):
         if not self.deck:
-            # Every unique clip has now been used once. Only reshuffle
-            # (i.e. start repeating) if we still need more footage -- the
-            # caller stops calling next() once the narration is covered,
-            # so reaching this point means stretching wasn't enough either.
-            if not self.repeat_warned:
-                print("WARNING: ran out of unique clips even after stretching "
-                      "clip durations -- reusing footage for the remainder of "
-                      "the episode. Raise CLIPS_PER_SCENE / CANDIDATE_POOL in "
-                      "visuals.py, or set PIXABAY_API_KEY, to avoid this.")
-                self.repeat_warned = True
-            self.exhausted_once = True
             self._reshuffle()
         idx = self.deck.pop(0)
         self.last_index = idx
         return self.manifest[idx]
 
-    def unique_remaining(self):
-        """How many not-yet-repeated clips are left in the current deck."""
-        return 0 if self.exhausted_once else len(self.deck)
-
 def main():
     ensure_dirs()
     settings=json.loads(Path("config/settings.json").read_text(encoding="utf-8"))
     manifest=json.loads((WORK/"media_manifest.json").read_text())
+    timings=json.loads((WORK/"scene_timings.json").read_text())
     narration=WORK/"narration.mp3"
     narration_dur=duration(narration)
+
+    timing_sum=sum(t["duration"] for t in timings)
+    if abs(timing_sum - narration_dur) > 0.5:
+        print(f"WARNING: scene_timings.json total ({timing_sum:.2f}s) doesn't match "
+              f"narration.mp3 duration ({narration_dur:.2f}s) -- concat may have dropped "
+              f"or added time. Clip/narration sync could drift.")
 
     min_cut=float(settings.get("visual_change_min_seconds",2.5))
     max_cut=float(settings.get("visual_change_max_seconds",5.0))
 
-    # V1 fix (kept): previously each of the N scene clips was shown exactly
-    # once for a fixed 5s, capping total video length at N*5s no matter how
-    # long the narration was.
-    #
-    # V3 fix: each downloaded clip is now used AT MOST ONCE per episode.
-    # Instead of cycling back through the manifest, we stretch every
-    # clip's on-screen duration (below) so the unique footage we actually
-    # downloaded covers the full narration length. Repeats only happen as
-    # a last resort if there truly isn't enough unique footage even after
-    # stretching -- see ClipScheduler.
+    # Group clips by the scene they were actually fetched for. This is the
+    # fix for clips not matching what the narration is saying: previously
+    # every scene's clips were pooled together and shuffled across the
+    # WHOLE episode with no relationship to timing, so a scene-3 clip could
+    # easily play during scene 1's narration. Now each scene's time window
+    # (from scene_timings.json, built from the real per-scene narration
+    # audio) only draws from that scene's own manifest entries.
+    by_scene={}
+    for m in manifest:
+        by_scene.setdefault(m["scene_id"], []).append(m)
+
     rng=random.Random(42)
-
-    # Stretch per-clip duration so the unique clips we actually downloaded
-    # can cover the full narration length without repeating any of them.
-    # Only fall back to the configured min/max (and eventually to reusing
-    # clips, inside ClipScheduler) if there genuinely isn't enough unique
-    # footage even at the stretch ceiling below.
-    STRETCH_CEILING = 12.0
-    unique_total = len(manifest)
-    if unique_total == 0:
-        raise RuntimeError("media_manifest.json is empty -- nothing to render.")
-
-    target_total = narration_dur + max_cut
-    avg_needed = target_total / unique_total
-    if avg_needed > max_cut:
-        stretched_max = min(STRETCH_CEILING, avg_needed * 1.15)
-        stretched_min = min(stretched_max, max(min_cut, avg_needed * 0.85))
-        print(f"{unique_total} unique clips for a {narration_dur:.0f}s narration -- "
-              f"stretching per-clip duration to {stretched_min:.1f}-{stretched_max:.1f}s "
-              f"so no clip has to repeat.")
-        min_cut, max_cut = stretched_min, stretched_max
-
-    scheduler=ClipScheduler(manifest, rng)
     src_durations={}
 
     def src_duration(path):
@@ -112,14 +79,7 @@ def main():
             src_durations[path]=duration(path)
         return src_durations[path]
 
-    clips=[]
-    total=0.0
-    i=0
-    while total < narration_dur + max_cut:
-        m=scheduler.next()
-        cut=rng.uniform(min_cut, max_cut)
-        out=WORK/f"clip_{i:03d}.mp4"
-
+    def render_cut(m, cut, out):
         if m["type"]=="video":
             sdur=src_duration(m["file"])
             if sdur>cut:
@@ -128,9 +88,7 @@ def main():
             else:
                 # Source is shorter than the cut we need -- loop it, but
                 # still pick a random start point within the source so a
-                # reused short clip doesn't always begin at frame 0 (which
-                # made repeats look identical when their cut length also
-                # happened to land close together).
+                # reused short clip doesn't always begin at frame 0.
                 ss=rng.uniform(0, sdur) if sdur>0 else 0.0
                 cmd=["ffmpeg","-y","-stream_loop","-1","-ss",f"{ss:.2f}","-i",m["file"],"-t",f"{cut:.2f}"]
             cmd += ["-vf",
@@ -148,9 +106,39 @@ def main():
                  "-an","-c:v","libx264","-preset","veryfast","-pix_fmt","yuv420p",
                  "-fps_mode","cfr",str(out)])
 
-        clips.append(out)
-        total+=cut
-        i+=1
+    clips=[]
+    i=0
+
+    for t in timings:
+        scene_id=t["scene_id"]
+        scene_target=t["duration"]
+        pool=by_scene.get(scene_id)
+
+        if not pool:
+            # Shouldn't happen (visuals.py guarantees >=1 entry per scene),
+            # but fall back to the full manifest rather than crash the
+            # render if a scene somehow has zero clips.
+            print(f"WARNING: no clips found for scene {scene_id} -- borrowing from the full pool.")
+            pool=manifest
+
+        scheduler=ClipScheduler(pool, rng)
+        scene_total=0.0
+
+        # Cover this scene's exact narration window with clips drawn only
+        # from this scene's own pool, trimming the final cut so the scene's
+        # visual runway lines up with its narration length instead of
+        # drifting into the next scene's audio.
+        while scene_total < scene_target:
+            m=scheduler.next()
+            remaining=scene_target - scene_total
+            cut=rng.uniform(min_cut, max_cut)
+            if remaining <= max_cut:
+                cut=remaining if remaining > 0.15 else max(remaining, 0.15)
+            out=WORK/f"clip_{i:03d}.mp4"
+            render_cut(m, cut, out)
+            clips.append(out)
+            scene_total+=cut
+            i+=1
 
     concat=WORK/"concat.txt"
     concat.write_text("".join(f"file '{p.resolve()}'\n" for p in clips))
