@@ -9,6 +9,36 @@ from google.genai import types
 
 from .utils import WORK, save_json, ensure_dirs
 
+# Conservative words-per-minute estimate for edge-tts narration at a
+# slightly-slowed rate. Used only to make sure Gemini's script is long
+# enough to clear the QA minimum-duration check -- deliberately a bit
+# low/conservative so we ask for MORE words than strictly needed rather
+# than risk falling short again.
+WORDS_PER_MINUTE = 140
+
+EXPAND_PROMPT = """The documentary script below is shorter than required.
+
+Current total narration word count: {current_words}
+Required minimum word count: {min_words}
+
+Here is the current episode JSON:
+
+{episode_json}
+
+Revise it to reach AT LEAST {min_words} spoken words total across all
+scenes, while:
+- Keeping the existing "working_title", "hook", and "short_script" fields
+  unchanged unless a small tweak is needed for consistency.
+- Keeping the same factual claims and tone -- do not invent new
+  statistics, companies, or quotes.
+- Expanding depth/detail on the existing scenes and/or adding additional
+  scenes (each scene still 120-170 words) to reach the target -- whichever
+  serves the story better.
+- Following the exact same JSON schema as the input.
+
+Return ONLY the revised, valid JSON object -- nothing else.
+"""
+
 
 # All models currently on Gemini's free tier (Pro models are paid-only as of
 # 2026), ordered from highest known daily quota to lowest so the script
@@ -223,6 +253,58 @@ def generate_with_retry(client, prompt, models=None, attempts_per_model=3):
     raise last_error
 
 
+def total_words(data):
+    return sum(len(s.get("narration", "").split()) for s in data.get("scenes", []))
+
+
+def expand_if_short(client, data, min_minutes, max_expand_attempts=2):
+    min_words = int(min_minutes * WORDS_PER_MINUTE)
+
+    for attempt in range(1, max_expand_attempts + 1):
+        current = total_words(data)
+
+        if current >= min_words:
+            return data
+
+        print(
+            f"Script is short: {current} words (need at least {min_words} "
+            f"for a {min_minutes}-minute minimum). Requesting an expansion "
+            f"(attempt {attempt}/{max_expand_attempts})..."
+        )
+
+        expand_prompt = EXPAND_PROMPT.format(
+            current_words=current,
+            min_words=min_words,
+            episode_json=json.dumps(data, ensure_ascii=False, indent=2),
+        )
+
+        try:
+            text = generate_with_retry(client, expand_prompt, attempts_per_model=2)
+            text = clean_json(text)
+            expanded = json.loads(text)
+
+            if "scenes" in expanded and expanded["scenes"]:
+                data = expanded
+            else:
+                print("Expansion response was missing scenes -- keeping previous version.")
+                break
+
+        except Exception as e:
+            print(f"Expansion attempt failed, keeping current script: {e}")
+            break
+
+    final_words = total_words(data)
+    if final_words < min_words:
+        print(
+            f"WARNING: script is still only {final_words} words after "
+            f"expansion attempts (target {min_words}+). The rendered video "
+            f"may come in under your configured min_minutes -- consider "
+            f"lowering min_minutes in config/settings.json, or re-running."
+        )
+
+    return data
+
+
 def main(topic):
 
     ensure_dirs()
@@ -233,6 +315,9 @@ def main(topic):
         raise SystemExit(
             "Missing GEMINI_API_KEY"
         )
+
+    settings = json.loads(open("config/settings.json", encoding="utf-8").read())
+    min_minutes = settings.get("min_minutes", 6)
 
     client = genai.Client(
         api_key=api_key
@@ -277,6 +362,8 @@ def main(topic):
         print("Gemini did not return a short_script -- falling back to the main hook for the short video.")
         data["short_script"] = data.get("hook", "")
 
+    data = expand_if_short(client, data, min_minutes)
+
     save_json(
         WORK / "episode.json",
         data
@@ -288,6 +375,7 @@ def main(topic):
     print("===================================")
     print("Title:", data.get("working_title"))
     print("Scenes:", len(data["scenes"]))
+    print("Total narration words:", total_words(data))
     print("Output:", WORK / "episode.json")
     print("===================================")
 
