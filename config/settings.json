@@ -14,5 +14,6 @@
   "short_tts_rate": "+0%",
   "short_cut_min_seconds": 0.8,
   "short_cut_max_seconds": 1.8,
-  "short_cta_text": "Full story linked below"
+  "short_cta_text": "Full story linked below",
+  "short_caption_uppercase": true
 }
